@@ -12,14 +12,12 @@ Event to Video Demo Script
 """
 
 import time
-from memory_profiler import profile
 import sys
 import numpy as np
 import argparse
 import torch
 import torch.nn.functional as F
 from metavision_sdk_stream import Camera
-from metavision_sdk_base import EventCD
 from metavision_core_ml.event_to_video.lightning_model import EventToVideoLightningModel
 from metavision_core_ml.preprocessing.event_to_tensor_torch import (
     event_cd_to_torch,
@@ -27,7 +25,7 @@ from metavision_core_ml.preprocessing.event_to_tensor_torch import (
 )
 from metavision_core_ml.utils.torch_ops import normalize_tiles, viz_flow
 from metavision_core_ml.utils.show_or_write import ShowWrite
-from metavision_core.event_io.raw_reader import initiate_device, RawReader
+from metavision_core.event_io.raw_reader import RawReader
 
 
 def parse_args(argv=None):
@@ -38,18 +36,7 @@ def parse_args(argv=None):
     )
     parser.add_argument("--start_ts", type=int, default=0, help="start timestamp")
     parser.add_argument(
-        "--mode",
-        type=str,
-        default="mixed",
-        choices=["n_events", "delta_t", "mixed", "adaptive"],
-        help="how to cut events",
-    )
-
-    parser.add_argument(
-        "--n_events", type=int, default=30000, help="accumulate by N events"
-    )
-    parser.add_argument(
-        "--delta_t", type=int, default=30000, help="accumulate by delta_t"
+        "--delta_t", type=int, default=10000, help="accumulate by delta_t"
     )
     parser.add_argument("--video_path", type=str, default="", help="path to video")
     parser.add_argument(
@@ -57,12 +44,6 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--max_duration", type=int, default=-1, help="run for this duration"
-    )
-    parser.add_argument(
-        "--thr_var",
-        type=float,
-        default=3e-5,
-        help="threshold variance for adaptive rate",
     )
     parser.add_argument(
         "--cpu", action="store_true", help="if true use cpu and not cuda"
@@ -111,12 +92,14 @@ def run(params):
     while not raw_stream.is_done():
         # Read the events that we want
         start = time.time()
-        events = raw_stream.load_delta_t(10000)
+
+        # read all the stuff
+        events = raw_stream.load_delta_t(params.delta_t)
 
         if events.size > 0:
             first_ts = events["t"][0]
             if first_ts <= params.start_ts:
-                return
+                continue
             last_ts = events["t"][-1]
             if (
                 params.max_duration > 0
@@ -125,7 +108,7 @@ def run(params):
                 sys.exit()
 
         if not pause and not len(events):
-            return
+            continue
 
         if not pause:
             events_th = event_cd_to_torch(events).to(device)
@@ -155,7 +138,7 @@ def run(params):
                     nbins,
                     "bilinear",
                 )
-            except RuntimeError as e:
+            except RuntimeError:
                 continue
 
             tensor_th = F.interpolate(
@@ -199,9 +182,12 @@ def run(params):
             sys.exit()
         if key == ord("p"):
             pause = not pause
+        if key == ord("q"):
+            return
 
+        # Read all the stuff
         dt = time.time() - start
-        raw_stream.load_delta_t(dt * 1.1e6)
+        raw_stream.load_delta_t(dt * 1.5e6)
 
 
 def main():
