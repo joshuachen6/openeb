@@ -1,0 +1,11 @@
+% camera_integrator_name Prophesee
+% date 2025-04-05 15:59:26
+% evt 3.0
+% format EVT3;height=720;width=1280
+% geometry 1280x720
+% plugin_integrator_name Prophesee
+% plugin_name hal_plugin_prophesee
+% sensor_generation 4.2
+% sensor_name IMX636
+% serial_number 00050398
+% end

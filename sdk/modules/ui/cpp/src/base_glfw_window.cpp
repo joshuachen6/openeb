@@ -48,7 +48,8 @@ struct GLFWContext {
         glfwMakeContextCurrent(window);
 
         if (glewInit() != GLEW_OK) {
-            throw std::runtime_error("Impossible to initialize GL extensions with GLEW");
+            // We are going to ignore this error and continue as normal
+            // throw std::runtime_error("Impossible to initialize GL extensions with GLEW");
         }
 
         glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
