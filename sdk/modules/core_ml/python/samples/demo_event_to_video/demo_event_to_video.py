@@ -103,13 +103,15 @@ def run(params):
     print("height_width: ", params.height_width)
 
     pause = False
-    event_list = []
-    start_time = -1
     start = time.time()
-    timer = time.time()
 
-    def step(events):
-        nonlocal pause
+    raw_stream = RawReader.from_device(device=camera.get_device(), max_events=int(1e8))
+
+    # Read loop
+    while not raw_stream.is_done():
+        # Read the events that we want
+        start = time.time()
+        events = raw_stream.load_delta_t(10000)
 
         if events.size > 0:
             first_ts = events["t"][0]
@@ -142,52 +144,8 @@ def run(params):
                 .to(device)
             )
 
-            def _event_volume(
-                events,
-                batch_size,
-                height,
-                width,
-                start_times,
-                durations,
-                nbins,
-                mode="bilinear",
-                vol=None,
-            ):
-                bs = events[:, 0].long()
-                xs = events[:, 1].long()
-                ys = events[:, 2].long()
-                ps = events[:, 3].float()
-                ts = events[:, 4].float()
-
-                start_times = start_times[bs]
-                durations = durations[bs]
-                ti_star = (ts - start_times) * nbins / durations - 0.5
-                lbin = torch.floor(ti_star)
-                lbin = torch.clamp(lbin, min=0, max=nbins - 1)
-                if vol is None:
-                    vol = torch.zeros(
-                        (batch_size, nbins, height, width),
-                        dtype=torch.float32,
-                        device=events.device,
-                    )
-                if mode == "bilinear":
-                    rbin = torch.clamp(lbin + 1, max=nbins - 1)
-                    lvals = torch.clamp(1 - torch.abs(lbin - ti_star), min=0)
-                    rvals = 1 - lvals
-                    if np.isnan(lvals.cpu()).any():
-                        raise RuntimeError("nan")
-                    vol.index_put_(
-                        (bs, lbin.long(), ys, xs), ps * lvals, accumulate=True
-                    )
-                    vol.index_put_(
-                        (bs, rbin.long(), ys, xs), ps * rvals, accumulate=True
-                    )
-                else:
-                    vol.index_put_((bs, lbin.long(), ys, xs), ps, accumulate=True)
-                return vol
-
             try:
-                tensor_th = _event_volume(
+                tensor_th = event_volume(
                     events_th,
                     1,
                     height,
@@ -198,7 +156,7 @@ def run(params):
                     "bilinear",
                 )
             except RuntimeError as e:
-                return
+                continue
 
             tensor_th = F.interpolate(
                 tensor_th,
@@ -242,14 +200,6 @@ def run(params):
         if key == ord("p"):
             pause = not pause
 
-    raw_stream = RawReader.from_device(device=camera.get_device(), max_events=int(1e8))
-
-    # Read loop
-    while not raw_stream.is_done():
-        # Read the events that we want
-        start = time.time()
-        events = raw_stream.load_delta_t(10000)
-        step(events)
         dt = time.time() - start
         raw_stream.load_delta_t(dt * 1.1e6)
 
